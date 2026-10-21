@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  formula:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-26
+          - name: macOS Intel
+            os: macos-26-intel
+    env:
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Link this checkout as the tap
+        run: |
+          tap_dir="$(brew --repository)/Library/Taps/postmaxin"
+          mkdir -p "$tap_dir"
+          ln -s "$GITHUB_WORKSPACE" "$tap_dir/homebrew-tap"
+          brew tap
+
+      - name: Audit
+        run: brew audit --strict --online postmaxin/tap/mediagrep
+
+      - name: Install from source
+        run: brew install --build-from-source --verbose postmaxin/tap/mediagrep
+
+      - name: Test
+        run: brew test postmaxin/tap/mediagrep
+
+      - name: Smoke
+        run: |
+          mediagrep --version
+          otool -L "$(brew --prefix)/bin/mediagrep"
+
+      - name: Binary loads libmediainfo through its stable opt path
+        run: |
+          strings "$(brew --prefix)/bin/mediagrep" | grep -F "/opt/libmediainfo/lib/libmediainfo.0.dylib"
